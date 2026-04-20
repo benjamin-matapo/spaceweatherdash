@@ -18,10 +18,11 @@ function App() {
       setLoading(true);
       setError(null);
       
+      const apiUrl = import.meta.env.VITE_API_URL || '';
       const [riskResponse, eventsResponse, noaaResponse] = await Promise.all([
-        axios.get('/api/risk'),
-        axios.get('/api/events'),
-        axios.get('/api/noaa')
+        axios.get(`${apiUrl}/api/risk`),
+        axios.get(`${apiUrl}/api/events`),
+        axios.get(`${apiUrl}/api/noaa`)
       ]);
 
       setRiskData(riskResponse.data);
