@@ -1,6 +1,6 @@
 import os
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -60,7 +60,7 @@ async def fetch_nasa_donki_events() -> List[Dict[str, Any]]:
     Fetch solar events from NASA DONKI API for the last 7 days.
     Fetches CME (Coronal Mass Ejections), FLR (Solar Flares), and GST (Geomagnetic Storms).
     """
-    end_date = datetime.utcnow()
+    end_date = datetime.now(timezone.utc)
     start_date = end_date - timedelta(days=7)
     
     all_events = []
@@ -109,7 +109,7 @@ async def fetch_noaa_kp_index() -> List[Dict[str, Any]]:
             data = response.json()
             
             # Filter to last 24 hours
-            cutoff_time = datetime.utcnow() - timedelta(hours=24)
+            cutoff_time = datetime.now(timezone.utc) - timedelta(hours=24)
             filtered_data = [
                 item for item in data
                 if datetime.fromisoformat(item["time_tag"].replace("Z", "+00:00")) > cutoff_time
@@ -208,20 +208,18 @@ def calculate_risk_scores(events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     df["eventRisk"] = df.apply(calculate_event_risk, axis=1)
     
     # Apply recency multiplier (events in last 24 hours get 1.5x)
-    cutoff_time = datetime.utcnow() - timedelta(hours=24)
+    cutoff_time = datetime.now(timezone.utc) - timedelta(hours=24)
     df["recencyMultiplier"] = df["parsedDate"].apply(
         lambda x: 1.5 if pd.notna(x) and x > cutoff_time else 1.0
     )
     df["adjustedRisk"] = df["eventRisk"] * df["recencyMultiplier"]
     
-    # Group by date and aggregate
-    daily_risk = df.groupby("date").agg({
-        "eventType": lambda x: x.mode()[0] if len(x) > 0 else "None",  # Most frequent event type
-        "adjustedRisk": "sum",  # Sum of adjusted risks
-        "eventType": "count"  # Event count
-    }).reset_index()
-    
-    daily_risk.columns = ["date", "dominantEventType", "totalRisk", "eventCount"]
+    # Group by date and aggregate using named aggregations
+    daily_risk = df.groupby("date").agg(
+        dominantEventType=("eventType", lambda x: x.mode()[0] if len(x) > 0 else "None"),
+        totalRisk=("adjustedRisk", "sum"),
+        eventCount=("eventType", "count")
+    ).reset_index()
     
     # Cap risk score at 10
     daily_risk["riskScore"] = np.minimum(daily_risk["totalRisk"], 10.0)
@@ -249,7 +247,7 @@ async def refresh_data():
     """
     global cached_events, cached_risk_scores, cached_noaa_data, last_fetch_time
     
-    print(f"Refreshing data at {datetime.utcnow()}")
+    print(f"Refreshing data at {datetime.now(timezone.utc)}")
     
     # Fetch events
     cached_events = await fetch_nasa_donki_events()
@@ -261,7 +259,7 @@ async def refresh_data():
     cached_noaa_data = await fetch_noaa_kp_index()
     
     # Update last fetch time
-    last_fetch_time = datetime.utcnow()
+    last_fetch_time = datetime.now(timezone.utc)
     
     print(f"Data refresh complete. Events: {len(cached_events)}, Risk scores: {len(cached_risk_scores)}, NOAA data points: {len(cached_noaa_data)}")
 
