@@ -1,8 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  RefreshCw, Satellite, Radio, AlertTriangle, CheckCircle2,
+  TrendingUp, BarChart3, List, Info, Sun, Globe,
+} from 'lucide-react';
 import RiskGauge from './components/RiskGauge';
 import RiskTrendChart from './components/RiskTrendChart';
 import EventsTable from './components/EventsTable';
 import KpIndexChart from './components/KpIndexChart';
+import StatCards from './components/StatCards';
+import {
+  SkeletonGauge,
+  SkeletonChart,
+  SkeletonTable,
+  SkeletonStatCards,
+} from './components/Skeletons';
 import axios from 'axios';
 
 function App() {
@@ -10,151 +21,319 @@ function App() {
   const [eventsData, setEventsData] = useState(null);
   const [noaaData, setNoaaData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [connectionStatus, setConnectionStatus] = useState('connecting'); // connecting | online | offline
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async (isRefresh = false) => {
     try {
-      setLoading(true);
+      if (isRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
       setError(null);
-      
+
       const apiUrl = import.meta.env.VITE_API_URL || '';
       const [riskResponse, eventsResponse, noaaResponse] = await Promise.all([
         axios.get(`${apiUrl}/api/risk`),
         axios.get(`${apiUrl}/api/events`),
-        axios.get(`${apiUrl}/api/noaa`)
+        axios.get(`${apiUrl}/api/noaa`),
       ]);
 
       setRiskData(riskResponse.data);
       setEventsData(eventsResponse.data);
       setNoaaData(noaaResponse.data);
-      setLastUpdated(new Date().toLocaleTimeString());
+      setLastUpdated(new Date());
+      setConnectionStatus('online');
     } catch (err) {
-      setError('Failed to fetch data from API');
+      setError('Unable to connect to the space weather API. Retrying…');
+      setConnectionStatus('offline');
       console.error('API Error:', err);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchData();
-    
-    // Auto-refresh every 5 minutes
-    const interval = setInterval(fetchData, 5 * 60 * 1000);
-    
+    const interval = setInterval(() => fetchData(true), 5 * 60 * 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchData]);
 
   const getCurrentRiskScore = () => {
-    if (!riskData || !riskData.risk_scores || riskData.risk_scores.length === 0) {
-      return 0;
-    }
+    if (!riskData?.risk_scores?.length) return 0;
     return riskData.risk_scores[0].risk_score;
   };
 
-  const getRiskColor = (score) => {
-    if (score >= 7) return 'text-risk-high';
-    if (score >= 4) return 'text-risk-medium';
-    return 'text-risk-low';
+  const formatLastUpdated = () => {
+    if (!lastUpdated) return '';
+    const now = new Date();
+    const diffMs = now - lastUpdated;
+    const diffMin = Math.floor(diffMs / 60000);
+    if (diffMin < 1) return 'Just now';
+    if (diffMin === 1) return '1 min ago';
+    return `${diffMin} min ago`;
   };
 
   return (
-    <div className="min-h-screen bg-space-900 text-white">
-      {/* Header */}
-      <header className="bg-space-800 border-b border-space-600 px-6 py-4">
-        <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
-              SpaceWeatherDash
-            </h1>
-            <p className="text-gray-400 text-sm">Live Solar Event Intelligence</p>
+    <div className="relative min-h-screen bg-space-950 text-white font-sans">
+      {/* ── Ambient Background ─────────────────────────── */}
+      <div className="starfield" aria-hidden="true" />
+      <div className="nebula-glow nebula-glow--purple" aria-hidden="true" />
+      <div className="nebula-glow nebula-glow--blue" aria-hidden="true" />
+      <div className="nebula-glow nebula-glow--cyan" aria-hidden="true" />
+
+      {/* ── Header ─────────────────────────────────────── */}
+      <header className="relative z-10 border-b border-space-700/50 backdrop-blur-md bg-space-950/60 sticky top-0">
+        <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
+          {/* Logo & Title */}
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <Sun className="w-7 h-7 text-amber-400 animate-spin-slow" />
+              <div className="absolute inset-0 w-7 h-7 bg-amber-400/20 rounded-full blur-md" />
+            </div>
+            <div>
+              <h1 className="text-lg sm:text-xl font-bold tracking-tight">
+                <span className="bg-gradient-to-r from-purple-400 via-blue-400 to-cyan-400 bg-clip-text text-transparent">
+                  SpaceWeatherDash
+                </span>
+              </h1>
+              <p className="text-[10px] sm:text-xs text-gray-500 font-medium tracking-wide">
+                LIVE SOLAR EVENT INTELLIGENCE
+              </p>
+            </div>
           </div>
-          <div className="flex items-center gap-4">
+
+          {/* Status & Controls */}
+          <div className="flex items-center gap-3 sm:gap-4">
+            {/* Connection status */}
+            <div className="hidden sm:flex items-center gap-2 text-xs">
+              <div className={`relative w-2 h-2 rounded-full ${
+                connectionStatus === 'online'
+                  ? 'bg-emerald-400 status-dot status-dot--green'
+                  : connectionStatus === 'offline'
+                  ? 'bg-red-400 status-dot status-dot--red'
+                  : 'bg-amber-400 status-dot status-dot--amber'
+              }`} />
+              <span className="text-gray-500 font-medium">
+                {connectionStatus === 'online' ? 'Live' : connectionStatus === 'offline' ? 'Offline' : 'Connecting'}
+              </span>
+            </div>
+
+            {/* Last updated */}
             {lastUpdated && (
-              <div className="text-sm text-gray-400">
-                Last updated: {lastUpdated}
-              </div>
+              <span className="hidden md:block text-xs text-gray-600">
+                Updated {formatLastUpdated()}
+              </span>
             )}
+
+            {/* Refresh button */}
             <button
-              onClick={fetchData}
-              disabled={loading}
-              className="px-4 py-2 bg-space-600 hover:bg-space-700 rounded-lg text-sm transition-colors disabled:opacity-50"
+              id="refresh-button"
+              onClick={() => fetchData(true)}
+              disabled={refreshing || loading}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
+                bg-space-700/60 hover:bg-space-600/80 border border-space-600/50
+                hover:border-accent-purple/30 transition-all duration-200
+                disabled:opacity-40 disabled:cursor-not-allowed
+                hover:shadow-glow-purple"
             >
-              {loading ? 'Loading...' : 'Refresh'}
+              <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">{refreshing ? 'Syncing' : 'Refresh'}</span>
             </button>
           </div>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto p-6">
+      {/* ── Main Content ───────────────────────────────── */}
+      <main className="relative z-10 max-w-[1400px] mx-auto px-4 sm:px-6 py-6 space-y-6">
+
+        {/* Error Banner */}
         {error && (
-          <div className="bg-red-900/50 border border-red-500 rounded-lg p-4 mb-6">
-            <p className="text-red-200">{error}</p>
+          <div className="animate-fade-in-down glass-card border-red-500/30 p-4 flex items-center gap-3" id="error-banner">
+            <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm text-red-200 font-medium">{error}</p>
+              <p className="text-xs text-red-300/60 mt-0.5">Check your connection or try refreshing</p>
+            </div>
+            <button
+              onClick={() => fetchData()}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-red-500/20 hover:bg-red-500/30 text-red-200 border border-red-500/30 transition-colors"
+            >
+              Retry
+            </button>
           </div>
         )}
 
-        {/* Risk Score Gauge */}
-        <div className="mb-8">
-          <RiskGauge score={getCurrentRiskScore()} />
-        </div>
-
-        {/* Charts Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          {/* Risk Trend Chart */}
-          <div className="bg-space-800 rounded-xl p-6 border border-space-600">
-            <h2 className="text-xl font-semibold mb-4">7-Day Risk Trend</h2>
-            {riskData && <RiskTrendChart data={riskData.risk_scores} />}
+        {/* Loading State */}
+        {loading && !error ? (
+          <div className="space-y-6 animate-fade-in">
+            <SkeletonStatCards />
+            <SkeletonGauge />
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <SkeletonChart />
+              <SkeletonChart />
+            </div>
+            <SkeletonTable />
           </div>
+        ) : (
+          <>
+            {/* Stat Cards */}
+            <StatCards riskData={riskData} eventsData={eventsData} noaaData={noaaData} />
 
-          {/* Kp Index Chart */}
-          <div className="bg-space-800 rounded-xl p-6 border border-space-600">
-            <h2 className="text-xl font-semibold mb-4">24-Hour Kp Index</h2>
-            {noaaData && <KpIndexChart data={noaaData.kp_index} />}
-          </div>
-        </div>
+            {/* Risk Gauge */}
+            <div className="animate-fade-in-up" style={{ animationDelay: '100ms', animationFillMode: 'both' }}>
+              <RiskGauge score={getCurrentRiskScore()} />
+            </div>
 
-        {/* Events Table */}
-        <div className="bg-space-800 rounded-xl p-6 border border-space-600">
-          <h2 className="text-xl font-semibold mb-4">Recent Solar Events</h2>
-          {eventsData && <EventsTable data={eventsData.events} />}
-        </div>
+            {/* Charts Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Risk Trend */}
+              <div
+                className="glass-card p-6 animate-fade-in-up"
+                style={{ animationDelay: '200ms', animationFillMode: 'both' }}
+              >
+                <div className="flex items-center gap-2 mb-5">
+                  <TrendingUp className="w-4 h-4 text-accent-purple" />
+                  <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-300">
+                    7-Day Risk Trend
+                  </h2>
+                </div>
+                {riskData ? (
+                  <RiskTrendChart data={riskData.risk_scores} />
+                ) : (
+                  <div className="h-72 flex items-center justify-center text-gray-600 text-sm">
+                    Waiting for data…
+                  </div>
+                )}
+              </div>
 
-        {/* Legend */}
-        <div className="mt-8 bg-space-800 rounded-xl p-6 border border-space-600">
-          <h2 className="text-xl font-semibold mb-4">Risk Score Legend</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-4 h-4 rounded-full bg-risk-low"></div>
-              <div>
-                <p className="font-semibold text-risk-low">Low Risk (0-3)</p>
-                <p className="text-sm text-gray-400">Minor solar activity, minimal impact</p>
+              {/* Kp Index */}
+              <div
+                className="glass-card p-6 animate-fade-in-up"
+                style={{ animationDelay: '300ms', animationFillMode: 'both' }}
+              >
+                <div className="flex items-center gap-2 mb-5">
+                  <BarChart3 className="w-4 h-4 text-accent-cyan" />
+                  <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-300">
+                    24-Hour Kp Index
+                  </h2>
+                </div>
+                {noaaData ? (
+                  <KpIndexChart data={noaaData.kp_index} />
+                ) : (
+                  <div className="h-72 flex items-center justify-center text-gray-600 text-sm">
+                    Waiting for data…
+                  </div>
+                )}
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="w-4 h-4 rounded-full bg-risk-medium"></div>
-              <div>
-                <p className="font-semibold text-risk-medium">Medium Risk (4-6)</p>
-                <p className="text-sm text-gray-400">Moderate activity, monitor satellite systems</p>
+
+            {/* Events Table */}
+            <div
+              className="glass-card p-6 animate-fade-in-up"
+              style={{ animationDelay: '400ms', animationFillMode: 'both' }}
+            >
+              <div className="flex items-center justify-between mb-5">
+                <div className="flex items-center gap-2">
+                  <List className="w-4 h-4 text-accent-blue" />
+                  <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-300">
+                    Recent Solar Events
+                  </h2>
+                </div>
+                {eventsData?.events?.length > 0 && (
+                  <span className="text-xs font-mono text-gray-600 bg-space-700/50 px-2 py-0.5 rounded">
+                    {eventsData.events.length} events
+                  </span>
+                )}
+              </div>
+              {eventsData ? (
+                <EventsTable data={eventsData.events} />
+              ) : (
+                <div className="py-16 text-center text-gray-600 text-sm">
+                  Waiting for data…
+                </div>
+              )}
+            </div>
+
+            {/* Risk Legend */}
+            <div
+              className="glass-card p-6 animate-fade-in-up"
+              style={{ animationDelay: '500ms', animationFillMode: 'both' }}
+            >
+              <div className="flex items-center gap-2 mb-5">
+                <Info className="w-4 h-4 text-gray-500" />
+                <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-300">
+                  Risk Score Guide
+                </h2>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {[
+                  {
+                    level: 'Low Risk',
+                    range: '0 – 3',
+                    description: 'Minor solar activity. Minimal impact on satellite operations.',
+                    color: 'text-risk-low',
+                    dotColor: 'bg-risk-low',
+                    bgColor: 'bg-risk-low/5',
+                    borderColor: 'border-risk-low/20',
+                    icon: CheckCircle2,
+                  },
+                  {
+                    level: 'Moderate Risk',
+                    range: '4 – 6',
+                    description: 'Moderate activity. Monitor satellite drag and comm channels.',
+                    color: 'text-risk-medium',
+                    dotColor: 'bg-risk-medium',
+                    bgColor: 'bg-risk-medium/5',
+                    borderColor: 'border-risk-medium/20',
+                    icon: Radio,
+                  },
+                  {
+                    level: 'High Risk',
+                    range: '7 – 10',
+                    description: 'Severe activity. Expect comm disruptions and radiation risk.',
+                    color: 'text-risk-high',
+                    dotColor: 'bg-risk-high',
+                    bgColor: 'bg-risk-high/5',
+                    borderColor: 'border-risk-high/20',
+                    icon: Satellite,
+                  },
+                ].map((item) => (
+                  <div
+                    key={item.level}
+                    className={`rounded-xl p-4 ${item.bgColor} border ${item.borderColor} transition-all hover:scale-[1.02]`}
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <item.icon className={`w-4 h-4 ${item.color}`} />
+                      <span className={`text-sm font-bold ${item.color}`}>{item.level}</span>
+                      <span className="text-xs text-gray-600 font-mono ml-auto">{item.range}</span>
+                    </div>
+                    <p className="text-xs text-gray-500 leading-relaxed">{item.description}</p>
+                  </div>
+                ))}
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="w-4 h-4 rounded-full bg-risk-high"></div>
-              <div>
-                <p className="font-semibold text-risk-high">High Risk (7-10)</p>
-                <p className="text-sm text-gray-400">Severe activity, take protective measures</p>
-              </div>
-            </div>
-          </div>
-        </div>
+          </>
+        )}
       </main>
 
-      {/* Footer */}
-      <footer className="bg-space-800 border-t border-space-600 px-6 py-4 mt-8">
-        <div className="max-w-7xl mx-auto text-center text-gray-400 text-sm">
-          <p>Data sources: NASA DONKI API & NOAA Space Weather Prediction Center</p>
-          <p className="mt-1">For satellite operators: High risk scores indicate potential for satellite drag, communication disruptions, and radiation damage.</p>
+      {/* ── Footer ─────────────────────────────────────── */}
+      <footer className="relative z-10 border-t border-space-700/30 mt-8 backdrop-blur-sm bg-space-950/40">
+        <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-6">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-xs text-gray-600">
+              <Globe className="w-3.5 h-3.5" />
+              <span>Data from NASA DONKI API &amp; NOAA SWPC</span>
+            </div>
+            <p className="text-xs text-gray-700 text-center sm:text-right max-w-md">
+              For satellite operators: High risk scores indicate potential for satellite drag,
+              communication disruptions, and radiation damage.
+            </p>
+          </div>
         </div>
       </footer>
     </div>

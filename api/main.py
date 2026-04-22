@@ -110,10 +110,19 @@ async def fetch_noaa_kp_index() -> List[Dict[str, Any]]:
             
             # Filter to last 24 hours
             cutoff_time = datetime.now(timezone.utc) - timedelta(hours=24)
-            filtered_data = [
-                item for item in data
-                if datetime.fromisoformat(item["time_tag"].replace("Z", "+00:00")) > cutoff_time
-            ]
+            filtered_data = []
+            for item in data:
+                try:
+                    tag = item.get("time_tag", "")
+                    # Handle various NOAA timestamp formats
+                    parsed = datetime.fromisoformat(tag.replace("Z", "+00:00"))
+                    # Ensure timezone-aware
+                    if parsed.tzinfo is None:
+                        parsed = parsed.replace(tzinfo=timezone.utc)
+                    if parsed > cutoff_time:
+                        filtered_data.append(item)
+                except (ValueError, TypeError):
+                    continue
             
             return filtered_data
         except Exception as e:
